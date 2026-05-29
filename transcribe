@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Launcher: set up the local tool/GPU library paths, then run the pipeline.
+set -euo pipefail
+PROJ="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
+# shellcheck disable=SC1091
+source "$PROJ/env.sh"
+exec "$PROJ/venv/bin/python" "$PROJ/transcribe.py" "$@"

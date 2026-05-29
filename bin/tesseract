@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Wrapper: run the locally-extracted tesseract with its libs + tessdata.
+PROJ="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")/.." && pwd)"
+TESS_LIB="$PROJ/opt/tesseract/usr/lib/x86_64-linux-gnu"
+export LD_LIBRARY_PATH="$TESS_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export TESSDATA_PREFIX="${TESSDATA_PREFIX:-$PROJ/opt/tesseract/usr/share/tesseract-ocr/4.00/tessdata}"
+exec "$PROJ/opt/tesseract/usr/bin/tesseract" "$@"
