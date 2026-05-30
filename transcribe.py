@@ -262,8 +262,7 @@ def build_script(segs: list[dict], events: list[dict], meta: dict,
 
 # ---------------------------------------------------------------- per-video driver
 def process_video(src: Path, root: Path, args, model_holder: dict) -> None:
-    rel = src.relative_to(root)
-    project = rel.parts[0] if len(rel.parts) > 1 else "_root"
+    project = project_for(src, root)
     stem = src.stem
     outdir = OUTPUT_ROOT / project / stem
     script_path = outdir / "script.md"
@@ -321,6 +320,16 @@ def collect_videos(root: Path, project: str | None, one_file: str | None) -> lis
     return sorted(p for p in base.rglob("*.mp4"))
 
 
+def project_for(src: Path, root: Path) -> str:
+    """Output-folder name for a video. Files under root use their top-level
+    subfolder; a --file outside root falls back to its parent dir name."""
+    try:
+        rel = src.relative_to(root)
+        return rel.parts[0] if len(rel.parts) > 1 else "_root"
+    except ValueError:
+        return src.parent.name or "_root"
+
+
 def cmd_list(args) -> None:
     root = Path(args.root)
     vids = collect_videos(root, args.project, None)
@@ -330,7 +339,7 @@ def cmd_list(args) -> None:
         meta = ffprobe_meta(v)
         size = v.stat().st_size
         total += size
-        proj = v.relative_to(root).parts[0] if len(v.relative_to(root).parts) > 1 else "_root"
+        proj = project_for(v, root)
         print(f"{proj:22} {meta.get('duration_hms','?'):>9} {size/1e6:7.0f}M  {v.name}")
     print(f"\n{len(vids)} files · {total/1e9:.1f} GB total")
 
@@ -363,7 +372,7 @@ def main() -> None:
     pr = sub.add_parser("run", help="transcribe + narrate + script recordings")
     pr.add_argument("--root", default=str(DEFAULT_ROOT))
     pr.add_argument("--project", default=None, help="only this subfolder")
-    pr.add_argument("--file", default=None, help="single video path (overrides root/project)")
+    pr.add_argument("--file", default=None, help="single video path (absolute; works outside --root)")
     pr.add_argument("--model", default="medium.en",
                     help="whisper model: tiny.en/base.en/small.en/medium.en/large-v3")
     pr.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
