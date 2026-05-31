@@ -232,6 +232,34 @@ def extract_frames_at(src: Path, times: list[float], framedir: Path) -> list[tup
     return paired
 
 
+def interval_times(duration: float, interval: float) -> list[float]:
+    """Timestamps at a fixed cadence across [0, duration]. Catches scrolling
+    content that scene-change detection misses (smooth scroll never trips a cut)."""
+    if interval <= 0 or duration <= 0:
+        return [0.0]
+    n = int(duration // interval)
+    return [round(i * interval, 3) for i in range(n + 1)]
+
+
+def merge_times(*time_lists: list[float], eps: float = 1.0) -> list[float]:
+    """Sorted union of timestamp lists, dropping any within `eps` seconds of an
+    already-kept one (a scene cut next to an interval sample is redundant)."""
+    out: list[float] = []
+    for t in sorted(set().union(*[set(tl) for tl in time_lists])):
+        if not out or t - out[-1] >= eps:
+            out.append(t)
+    return out
+
+
+def scene_frame_times(src: Path, framedir: Path, scene: float,
+                      duration: float = 0.0, interval: float = 0.0) -> list[float]:
+    """Scene-change timestamps, optionally merged with a fixed interval cadence."""
+    times = detect_scene_times(src, framedir, scene)
+    if interval > 0:
+        times = merge_times(times, interval_times(duration, interval))
+    return times
+
+
 def extract_scene_frames(src: Path, framedir: Path, scene: float) -> list[tuple[float, Path]]:
     times = detect_scene_times(src, framedir, scene)
     return extract_frames_at(src, times, framedir)
@@ -381,7 +409,9 @@ def process_video(src: Path, root: Path, args, model_holder: dict) -> None:
         # --- scene frames + OCR narration
         print("  [2/3] scene-change frames + OCR…")
         framedir = Path(td) / "frames"
-        frames = extract_scene_frames(media, framedir, args.scene)
+        times = scene_frame_times(media, framedir, args.scene,
+                                  meta.get("duration_sec", 0.0), args.ocr_interval)
+        frames = extract_frames_at(media, times, framedir)
         events = build_narration(frames, outdir / "ocr.jsonl", Path(td), args.ocr_psm)
         write_narration(events, outdir / "narration.md")
         if args.keep_frames:
@@ -463,7 +493,8 @@ def reprocess_ocr(src: Path, root: Path, args) -> None:
     with tempfile.TemporaryDirectory() as td:
         media = stage_source(src, Path(td), enabled=args.stage)
         framedir = Path(td) / "frames"
-        times = detect_scene_times(media, framedir, args.scene)
+        times = scene_frame_times(media, framedir, args.scene,
+                                  meta.get("duration_sec", 0.0), args.ocr_interval)
         frames = extract_frames_at(media, times, framedir)
         events = build_narration(frames, outdir / "ocr.jsonl", Path(td), args.ocr_psm)
         write_narration(events, outdir / "narration.md")
@@ -483,6 +514,86 @@ def cmd_reocr(args) -> None:
     for v in vids:
         try:
             reprocess_ocr(v, root, args)
+        except Exception as e:  # noqa: BLE001
+            print(f"  ✗ ERROR on {v.name}: {e}")
+
+
+def _norm_lines(lines: list[str]) -> set[str]:
+    """Normalize OCR lines for coverage comparison (case/space-insensitive,
+    drop very short fragments)."""
+    return {re.sub(r"\s+", " ", ln).strip().lower()
+            for ln in lines if len(ln.strip()) >= 4}
+
+
+def analyze_interval(src: Path, root: Path, args, candidates: list[int]) -> None:
+    """Densely OCR a file at a fine base cadence, then report how much unique
+    on-screen text each candidate interval would capture vs the dense baseline.
+    Picks the optimal interval = smallest one still capturing ≥ target coverage."""
+    project = project_for(src, root)
+    meta = ffprobe_meta(src)
+    dur = meta.get("duration_sec", 0.0) or 0.0
+    if dur <= 0:
+        print(f"  skip (no duration): {project}/{src.stem}")
+        return
+
+    base = args.base
+    # cap total dense frames so the analysis stays bounded; coarsen base if needed
+    n_at_base = int(dur // base) + 1
+    if n_at_base > args.max_frames:
+        base = -(-int(dur) // args.max_frames)  # ceil
+        print(f"  (capping at {args.max_frames} frames → base interval {base}s)")
+    cands = [c for c in candidates if c >= base]
+
+    print(f"\n▶ sample {project}/{src.stem}  ({meta.get('duration_hms','?')}, base={base}s)")
+    with tempfile.TemporaryDirectory() as td:
+        media = stage_source(src, Path(td), enabled=args.stage)
+        framedir = Path(td) / "frames"
+        base_times = interval_times(dur, base)
+        frames = extract_frames_at(media, base_times, framedir)
+        print(f"  OCR-ing {len(frames)} dense frames…")
+        dense: dict[float, set[str]] = {}
+        for t, f in frames:
+            dense[t] = _norm_lines(ocr_frame(f, Path(td), args.ocr_psm))
+        dense_times = sorted(dense)
+        total = set().union(*dense.values()) if dense else set()
+        if not total:
+            print("  no OCR text recovered — nothing to measure")
+            return
+
+        print(f"  {len(total)} unique text lines across full session\n")
+        print(f"    {'interval':>8} {'frames':>7} {'uniq lines':>11} {'coverage':>9} {'lines/frame':>12}")
+        rows = []
+        for c in cands:
+            picked = {min(dense_times, key=lambda x: abs(x - tt))
+                      for tt in interval_times(dur, c)}
+            captured: set[str] = set()
+            for nt in picked:
+                captured |= dense[nt]
+            cov = len(captured) / len(total)
+            rows.append((c, len(picked), len(captured), cov))
+            print(f"    {c:>7}s {len(picked):>7} {len(captured):>11} "
+                  f"{cov:>8.0%} {len(captured)/max(len(picked),1):>12.1f}")
+
+        # optimal = smallest interval still ≥ target coverage
+        ok = [r for r in rows if r[3] >= args.target]
+        best = ok[-1] if ok else rows[0]
+        print(f"\n  → optimal ≈ {best[0]}s "
+              f"({best[3]:.0%} coverage, {best[1]} frames) "
+              f"for ≥{args.target:.0%} target")
+
+
+def cmd_sample(args) -> None:
+    root = Path(args.root)
+    vids = collect_videos(root, args.project, args.file)
+    if not vids:
+        print("no .mp4 files found")
+        return
+    candidates = sorted({int(x) for x in args.candidates.split(",") if x.strip()})
+    print(f"interval analysis on {len(vids)} file(s) · "
+          f"candidates={candidates}s · target≥{args.target:.0%}")
+    for v in vids:
+        try:
+            analyze_interval(v, root, args, candidates)
         except Exception as e:  # noqa: BLE001
             print(f"  ✗ ERROR on {v.name}: {e}")
 
@@ -507,6 +618,9 @@ def main() -> None:
     pr.add_argument("--compute-type", dest="compute_type", default="float16")
     pr.add_argument("--language", default=None, help="force language (default: auto / en for .en)")
     pr.add_argument("--scene", type=float, default=0.4, help="scene-change threshold 0–1")
+    pr.add_argument("--ocr-interval", dest="ocr_interval", type=float, default=0.0,
+                    help="also sample a frame every N seconds (catches scrolling "
+                         "content scene-detection misses); 0 = scene-change only")
     pr.add_argument("--ocr-psm", dest="ocr_psm", type=int, default=3,
                     help="tesseract page-segmentation mode (default 3 = auto layout)")
     pr.add_argument("--keep-frames", action="store_true", help="save extracted frames")
@@ -521,12 +635,35 @@ def main() -> None:
     ro.add_argument("--project", default=None, help="only this subfolder")
     ro.add_argument("--file", default=None, help="single video path (absolute; works outside --root)")
     ro.add_argument("--scene", type=float, default=0.4, help="scene-change threshold 0–1")
+    ro.add_argument("--ocr-interval", dest="ocr_interval", type=float, default=0.0,
+                    help="also sample a frame every N seconds (catches scrolling "
+                         "content scene-detection misses); 0 = scene-change only")
     ro.add_argument("--ocr-psm", dest="ocr_psm", type=int, default=3,
                     help="tesseract page-segmentation mode (default 3 = auto layout)")
     ro.add_argument("--no-stage", dest="stage", action="store_false",
                     help="don't copy sources off slow mounts to local disk first "
                          "(staging is auto-enabled for WSL /mnt, network shares, etc.)")
     ro.set_defaults(func=cmd_reocr)
+
+    ps = sub.add_parser("sample",
+                        help="measure OCR coverage vs sampling interval to pick --ocr-interval")
+    ps.add_argument("--root", default=str(DEFAULT_ROOT))
+    ps.add_argument("--project", default=None, help="only this subfolder")
+    ps.add_argument("--file", default=None, help="single video path (absolute; works outside --root)")
+    ps.add_argument("--base", type=int, default=5,
+                    help="dense base sampling interval in seconds (finest measurable; default 5)")
+    ps.add_argument("--candidates", default="5,10,15,20,30,45,60,90",
+                    help="comma-separated candidate intervals to evaluate (seconds)")
+    ps.add_argument("--target", type=float, default=0.9,
+                    help="coverage target for the recommended interval (default 0.9)")
+    ps.add_argument("--max-frames", dest="max_frames", type=int, default=300,
+                    help="cap on dense frames OCR'd per file (coarsens base if exceeded)")
+    ps.add_argument("--scene", type=float, default=0.4, help="scene-change threshold 0–1")
+    ps.add_argument("--ocr-psm", dest="ocr_psm", type=int, default=3,
+                    help="tesseract page-segmentation mode (default 3 = auto layout)")
+    ps.add_argument("--no-stage", dest="stage", action="store_false",
+                    help="don't copy sources off slow mounts to local disk first")
+    ps.set_defaults(func=cmd_sample)
 
     args = ap.parse_args()
     args.func(args)
