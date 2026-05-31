@@ -49,26 +49,53 @@ git commit   # "Add --ocr-interval sampling + sample tool to tune it"
 ```
 
 ### 2. Run the `sample` tool to pick the optimal interval
-Was launched on calcllm 17-35-17 but **results pending** (see gotcha below). Run on
-2–3 scroll-heavy files across projects:
+**First result is in** — calcllm 17-35-17 (19:15, base 5s, 232 dense frames):
+
 ```
-./transcribe sample --file "/mnt/c/Users/Owner/Videos/Recordings/calcllm/2026-05-23 17-35-17.mp4"
+    interval  frames  uniq lines  coverage  lines/frame
+          5s     232         964     100%          4.2
+         10s     116         625      65%          5.4
+         15s      78         507      53%          6.5
+         20s      58         428      44%          7.4
+         30s      39         349      36%          8.9
+         45s      26         263      27%         10.1
+         60s      20         218      23%         10.9
+         90s      13         159      16%         12.2
+```
+
+**Surprise: there is no knee.** Coverage falls roughly linearly with frame count and
+lines/frame *rises* as the interval grows — i.e. this session is near-continuous
+scrolling where almost every frame reveals genuinely new text. So "90% coverage" only
+happens at ~5s; there's no cheap plateau to exploit.
+
+Two caveats before over-reacting:
+1. **The denominator is noise-inflated.** `_norm_lines` counts each distinct OCR line
+   as unique, so flickering UI-chrome junk and minor OCR variance pad the 964 total →
+   real *content* coverage at 10–20s is higher than the raw % suggests.
+2. **This is the worst case** (heavy continuous scroll). Files where you pause to talk
+   should show flatter curves. **Still run the other two** to confirm:
+```
 ./transcribe sample --file "/mnt/c/Users/Owner/Videos/Recordings/gblockparty/2026-05-26 13-10-51.mp4"
 ./transcribe sample --file "/mnt/c/Users/Owner/Videos/Recordings/trail-brake-labs/2026-05-26 17-03-49.mp4"
 ```
 - ⚠️ **Buffering gotcha**: Python buffers stdout when not a TTY, so background/piped
   runs show *nothing* until they exit. Run in the **foreground** (TTY = live output),
   or prefix with `python -u` / set `PYTHONUNBUFFERED=1` if backgrounding.
-- Each run densely OCRs (~230–300 frames) → several minutes per file. Heavy but
-  one-off.
-- Read the coverage table; note the interval where coverage plateaus (the knee).
+- Each run densely OCRs (~230–300 frames) → several minutes per file. Heavy but one-off.
 
 ### 3. Decide the default interval
-- Pick the smallest interval that captures ≥~90% of unique on-screen text across the
-  sampled files (the tool prints a recommendation per file; reconcile across the 2–3).
-- Candidate guess before data: **15–20s**. Confirm with the tool.
-- Decide whether to bake it as the code default (currently `0`/off) — for OSS, an
-  off-by-default flag is safest; a sensible non-zero default is more useful. TBD.
+- Given no knee, this is a **cost ↔ completeness** call, not a free optimum:
+  - **10s** → ~65% raw (likely higher real) coverage, 116 frames / 19 min. Reasonable
+    middle ground for "cross-reference most of the reading."
+  - **15s** → ~53%, 78 frames. Cheaper, still tracks the gist.
+  - **5s** → ~full capture but ~230 frames/file → heavy OCR across the library.
+- **Informed candidate: ~10s** (revisit after the other two files; if they're flatter,
+  15–20s may suffice library-wide).
+- Consider improving the metric first (optional): tighten `_norm_lines` to drop chrome
+  noise, or measure coverage as *fraction of spoken-transcript lines with a matching
+  on-screen line within ±N s* — a more direct "is the reading cross-referenceable" test.
+- Decide whether to bake the chosen value as the code default (currently `0`/off). For
+  OSS, off-by-default is safest; a documented ~10–15s default is more useful. TBD.
 
 ### 4. Re-OCR the whole library with the chosen interval
 ```
@@ -90,8 +117,10 @@ Was launched on calcllm 17-35-17 but **results pending** (see gotcha below). Run
 ---
 
 ## Open questions / decisions deferred
-- **Default `--ocr-interval`**: off (0) vs a baked-in ~15–20s. Lean off-by-default for
-  OSS; revisit after step 3 data.
+- **Default `--ocr-interval`**: off (0) vs a baked-in ~10–15s. Lean off-by-default for
+  OSS; informed candidate ~10s (see step 3 data — no knee, so it's a cost call).
+- **Coverage metric**: current unique-line count is noise-inflated; consider a
+  spoken↔screen match metric (see step 3) for a truer "cross-referenceable" measure.
 - **UI-chrome junk**: toolbar/icon lines still produce some noise (e.g. `& & Open
   alignment page x as = x`); `clean_ocr_lines` drops most. Acceptable; revisit only if
   it clutters interval-sampled output.
