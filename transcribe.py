@@ -16,11 +16,15 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageOps
 
 PROJ = Path(__file__).resolve().parent
 # Where your recordings live. Override with $RECORDINGS_ROOT or --root.
@@ -63,6 +67,33 @@ def human_size(n: int) -> str:
             return f"{n:.0f}{unit}" if unit == "B" else f"{n/1:.0f}{unit}" if False else f"{n:.1f}{unit}"
         n /= 1024
     return f"{n:.1f}GB"
+
+
+# Filesystems where decoding/seeking is slow enough to be worth staging onto
+# local disk first: the WSL↔Windows bridge (9p/drvfs) and network mounts.
+_SLOW_FS = {"9p", "drvfs", "cifs", "smbfs", "smb3", "nfs", "nfs4", "fuseblk", "fuse.sshfs"}
+
+
+def is_slow_mount(path: Path) -> bool:
+    """True if `path` lives on a filesystem where ffmpeg's seek-heavy decode
+    pays a big latency tax (e.g. the WSL /mnt 9p bridge). Best-effort: returns
+    False if the filesystem type can't be determined."""
+    cp = run(["findmnt", "-no", "FSTYPE", "--target", str(path)])
+    if cp.returncode != 0:
+        return False
+    return cp.stdout.strip() in _SLOW_FS
+
+
+def stage_source(src: Path, td: Path, *, enabled: bool) -> Path:
+    """If staging is on and `src` is on a slow mount, copy it onto local disk
+    (the temp dir) so ffmpeg reads/seeks hit fast storage. Returns the path
+    ffmpeg should use (the local copy, or `src` unchanged)."""
+    if not enabled or not is_slow_mount(src):
+        return src
+    local = td / src.name
+    print(f"  staging {human_size(src.stat().st_size)} to local disk…")
+    shutil.copy2(src, local)
+    return local
 
 
 # ---------------------------------------------------------------- probe
@@ -143,34 +174,67 @@ def write_txt(segs: list[dict], path: Path) -> None:
     )
 
 
+_TXT_LINE = re.compile(r"^\[(\d{2}):(\d{2}):(\d{2})\]\s*(.*)$")
+
+
+def read_txt(path: Path) -> list[dict]:
+    """Inverse of write_txt: parse `[hh:mm:ss] text` lines back into segments.
+    Integer-second starts are sufficient for the timeline merge."""
+    segs = []
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        m = _TXT_LINE.match(line.strip())
+        if not m:
+            continue
+        h, mi, s, text = m.groups()
+        if text.strip():
+            segs.append({"start": int(h) * 3600 + int(mi) * 60 + int(s),
+                         "text": text.strip()})
+    return segs
+
+
 # ---------------------------------------------------------------- scene frames + OCR
-def extract_scene_frames(src: Path, framedir: Path, scene: float) -> list[tuple[float, Path]]:
+def detect_scene_times(src: Path, framedir: Path, scene: float) -> list[float]:
+    """Cheap detection-only pass: downscale + low fps so scene-compute doesn't
+    decode every frame at full res (pathological on 60fps clips). The fps filter
+    preserves real timestamps, so parsed pts_time values stay in seconds."""
     framedir.mkdir(parents=True, exist_ok=True)
     scenes_txt = framedir / "scenes.txt"
-    # scene-change frames
     cp = run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y",
               "-i", str(src),
-              "-vf", f"select='gt(scene,{scene})',metadata=print:file={scenes_txt}",
-              "-vsync", "vfr", "-q:v", "3",
-              str(framedir / "f_%05d.jpg")])
+              "-vf", (f"fps=4,scale=640:-1,select='gt(scene,{scene})',"
+                      f"metadata=print:file={scenes_txt}"),
+              "-f", "null", "-"])
     if cp.returncode != 0:
-        raise RuntimeError(f"scene extract failed: {cp.stderr}")
-    # parse pts_time list (one per selected frame, in order)
+        raise RuntimeError(f"scene detect failed: {cp.stderr}")
     times = []
     if scenes_txt.exists():
         for line in scenes_txt.read_text(errors="ignore").splitlines():
             m = re.search(r"pts_time:([0-9.]+)", line)
             if m:
                 times.append(float(m.group(1)))
-    frames = sorted(framedir.glob("f_*.jpg"))
-    paired = list(zip(times, frames))  # equal length by construction
+    return times
+
+
+def extract_frames_at(src: Path, times: list[float], framedir: Path) -> list[tuple[float, Path]]:
+    """Seek-extract a full-res PNG at each timestamp (plus a t=0 baseline).
+    Keyframe seek before -i is fast, so only the few detected frames get
+    decoded at full res — required for OCR quality."""
+    framedir.mkdir(parents=True, exist_ok=True)
+    paired: list[tuple[float, Path]] = []
     # always include a t=0 baseline frame so static sessions still get one
-    base = framedir / "f_base.jpg"
-    run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y",
-         "-ss", "0", "-i", str(src), "-frames:v", "1", "-q:v", "3", str(base)])
-    if base.exists():
-        paired = [(0.0, base)] + paired
+    all_times = [0.0] + [t for t in times if t > 0.0]
+    for i, t in enumerate(all_times):
+        frame = framedir / f"f_{i:05d}.png"
+        run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y",
+             "-ss", f"{t:.3f}", "-i", str(src), "-frames:v", "1", str(frame)])
+        if frame.exists():
+            paired.append((t, frame))
     return paired
+
+
+def extract_scene_frames(src: Path, framedir: Path, scene: float) -> list[tuple[float, Path]]:
+    times = detect_scene_times(src, framedir, scene)
+    return extract_frames_at(src, times, framedir)
 
 
 _ALNUM = re.compile(r"[A-Za-z0-9]")
@@ -189,20 +253,38 @@ def clean_ocr_lines(text: str) -> list[str]:
     return out
 
 
-def ocr_frame(frame: Path) -> list[str]:
-    cp = run([TESSERACT, str(frame), "stdout", "--psm", "6"])
+def preprocess_frame(frame: Path, td: Path) -> Path:
+    """Make a dark-mode screen frame OCR-friendly: grayscale, invert (so light
+    text on dark bg becomes dark text on light bg, which tesseract expects),
+    2× upscale, autocontrast. Light screens pass through un-inverted, so
+    mixed-theme libraries both work."""
+    im = Image.open(frame).convert("L")
+    if np.asarray(im).mean() < 110:
+        im = ImageOps.invert(im)
+    w, h = im.size
+    im = im.resize((w * 2, h * 2), Image.LANCZOS)
+    im = ImageOps.autocontrast(im)
+    out = td / (frame.stem + "_pp.png")
+    im.save(out)
+    return out
+
+
+def ocr_frame(frame: Path, td: Path, psm: int = 3) -> list[str]:
+    pp = preprocess_frame(frame, td)
+    cp = run([TESSERACT, str(pp), "stdout", "--psm", str(psm), "--oem", "1"])
     if cp.returncode != 0:
         return []
     return clean_ocr_lines(cp.stdout)
 
 
-def build_narration(frames: list[tuple[float, Path]], ocr_jsonl: Path):
+def build_narration(frames: list[tuple[float, Path]], ocr_jsonl: Path,
+                    td: Path, psm: int = 3):
     """OCR each frame; emit timestamped deltas (lines new vs previous frame)."""
     events = []
     prev: set[str] = set()
     with ocr_jsonl.open("w", encoding="utf-8") as jf:
         for ts, frame in frames:
-            lines = ocr_frame(frame)
+            lines = ocr_frame(frame, td, psm)
             jf.write(json.dumps({"t": round(ts, 2), "text": lines}) + "\n")
             cur = set(lines)
             new = [ln for ln in lines if ln not in prev]
@@ -278,10 +360,13 @@ def process_video(src: Path, root: Path, args, model_holder: dict) -> None:
     print(f"  duration {meta.get('duration_hms','?')} · {meta.get('width')}x{meta.get('height')}")
 
     with tempfile.TemporaryDirectory() as td:
+        # stage off slow mounts (e.g. WSL /mnt 9p) so ffmpeg seeks hit local disk
+        media = stage_source(src, Path(td), enabled=args.stage)
+
         # --- audio + transcript
         wav = Path(td) / "audio.wav"
         print("  [1/3] extracting audio + transcribing…")
-        extract_audio(src, wav)
+        extract_audio(media, wav)
         if "model" not in model_holder:
             model_holder["model"], model_holder["device"] = load_model(
                 args.model, args.device, args.compute_type)
@@ -296,11 +381,10 @@ def process_video(src: Path, root: Path, args, model_holder: dict) -> None:
         # --- scene frames + OCR narration
         print("  [2/3] scene-change frames + OCR…")
         framedir = Path(td) / "frames"
-        frames = extract_scene_frames(src, framedir, args.scene)
-        events = build_narration(frames, outdir / "ocr.jsonl")
+        frames = extract_scene_frames(media, framedir, args.scene)
+        events = build_narration(frames, outdir / "ocr.jsonl", Path(td), args.ocr_psm)
         write_narration(events, outdir / "narration.md")
         if args.keep_frames:
-            import shutil
             shutil.copytree(framedir, outdir / "frames", dirs_exist_ok=True)
         print(f"        {len(frames)} scene frames · {len(events)} screen events")
 
@@ -359,6 +443,50 @@ def cmd_run(args) -> None:
             print(f"  ✗ ERROR on {v.name}: {e}")
 
 
+def reprocess_ocr(src: Path, root: Path, args) -> None:
+    """Regenerate narration/ocr/script from existing transcript.txt — no Whisper."""
+    project = project_for(src, root)
+    stem = src.stem
+    outdir = OUTPUT_ROOT / project / stem
+    txt = outdir / "transcript.txt"
+    if not txt.exists():
+        print(f"  skip (no transcript.txt): {project}/{stem}")
+        return
+
+    t0 = datetime.now()
+    print(f"\n▶ re-OCR {project}/{stem}")
+    segs = read_txt(txt)
+    meta_path = outdir / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() \
+        else ffprobe_meta(src)
+
+    with tempfile.TemporaryDirectory() as td:
+        media = stage_source(src, Path(td), enabled=args.stage)
+        framedir = Path(td) / "frames"
+        times = detect_scene_times(media, framedir, args.scene)
+        frames = extract_frames_at(media, times, framedir)
+        events = build_narration(frames, outdir / "ocr.jsonl", Path(td), args.ocr_psm)
+        write_narration(events, outdir / "narration.md")
+        build_script(segs, events, meta, f"{project}/{stem}", outdir / "script.md")
+
+    dt = (datetime.now() - t0).total_seconds()
+    print(f"  ✓ {len(frames)} frames · {len(events)} events in {dt:.0f}s -> {outdir}")
+
+
+def cmd_reocr(args) -> None:
+    root = Path(args.root)
+    vids = collect_videos(root, args.project, args.file)
+    if not vids:
+        print("no .mp4 files found")
+        return
+    print(f"re-OCR {len(vids)} file(s) (reusing existing transcripts)")
+    for v in vids:
+        try:
+            reprocess_ocr(v, root, args)
+        except Exception as e:  # noqa: BLE001
+            print(f"  ✗ ERROR on {v.name}: {e}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -379,9 +507,26 @@ def main() -> None:
     pr.add_argument("--compute-type", dest="compute_type", default="float16")
     pr.add_argument("--language", default=None, help="force language (default: auto / en for .en)")
     pr.add_argument("--scene", type=float, default=0.4, help="scene-change threshold 0–1")
+    pr.add_argument("--ocr-psm", dest="ocr_psm", type=int, default=3,
+                    help="tesseract page-segmentation mode (default 3 = auto layout)")
     pr.add_argument("--keep-frames", action="store_true", help="save extracted frames")
+    pr.add_argument("--no-stage", dest="stage", action="store_false",
+                    help="don't copy sources off slow mounts to local disk first "
+                         "(staging is auto-enabled for WSL /mnt, network shares, etc.)")
     pr.add_argument("--force", action="store_true", help="reprocess even if script.md exists")
     pr.set_defaults(func=cmd_run)
+
+    ro = sub.add_parser("reocr", help="regenerate narration/script via OCR only (no Whisper)")
+    ro.add_argument("--root", default=str(DEFAULT_ROOT))
+    ro.add_argument("--project", default=None, help="only this subfolder")
+    ro.add_argument("--file", default=None, help="single video path (absolute; works outside --root)")
+    ro.add_argument("--scene", type=float, default=0.4, help="scene-change threshold 0–1")
+    ro.add_argument("--ocr-psm", dest="ocr_psm", type=int, default=3,
+                    help="tesseract page-segmentation mode (default 3 = auto layout)")
+    ro.add_argument("--no-stage", dest="stage", action="store_false",
+                    help="don't copy sources off slow mounts to local disk first "
+                         "(staging is auto-enabled for WSL /mnt, network shares, etc.)")
+    ro.set_defaults(func=cmd_reocr)
 
     args = ap.parse_args()
     args.func(args)
