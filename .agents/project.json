@@ -1,0 +1,11 @@
+{
+  "project_type": "devtool",
+  "enabled_packs": [
+    "ord"
+  ],
+  "skill_pack_version": 1,
+  "enabled_skills": {
+    "session-triage": "session-analytics",
+    "ship-end": "exec-loop"
+  }
+}

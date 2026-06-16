@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en" data-alignment-status="review" data-alignment-category="research" data-visual-tier="document">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORD Align Scope Review: Reverse Script Studio</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --red: #f85149;
+      --orange: #d29922;
+      --purple: #bc8cff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    main {
+      width: min(1080px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 56px;
+      max-width: 100%;
+      overflow-wrap: break-word;
+    }
+    h1, h2, h3 { color: #fff; line-height: 1.2; }
+    h1 { margin: 0 0 8px; }
+    h2 { margin-top: 0; color: var(--accent); }
+    a { color: var(--accent); }
+    code {
+      background: #0b1220;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.1rem 0.35rem;
+    }
+    section, .toc, .status, .question, .compile {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 20px;
+      margin: 18px 0;
+    }
+    .summary {
+      color: var(--text-muted);
+      margin: 0 0 20px;
+    }
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 16px 0 0;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 10px;
+      color: var(--text-muted);
+      background: #0b1220;
+    }
+    .toc ul { margin: 0; padding-left: 22px; }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .section-head h2 { margin: 0; }
+    .feedback {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .feedback button, .question label, .compile button, .copy-btn, .local-compile {
+      min-height: 44px;
+      padding: 10px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0b1220;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .feedback button.active[data-value="emphasize"] { border-color: var(--green); color: var(--green); }
+    .feedback button.active[data-value="down"] { border-color: var(--red); color: var(--red); }
+    .feedback button.active[data-value="needs-clarification"] { border-color: var(--orange); color: var(--orange); }
+    .feedback-panel, .local-yaml, .other-note, .clarify-note, .answer-note { display: none; margin-top: 10px; }
+    textarea {
+      width: 100%;
+      min-height: 110px;
+      background: #0b1220;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font: inherit;
+    }
+    .question {
+      background: #1c2333;
+      border-color: #38445f;
+    }
+    .question h3 { color: var(--purple); margin-top: 0; }
+    .question label {
+      display: block;
+      margin: 8px 0;
+    }
+    .question input { margin-right: 8px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
+      gap: 12px;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      background: #0b1220;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 12px;
+    }
+    table { width: 100%; border-collapse: collapse; min-width: 720px; }
+    th, td { border-bottom: 1px solid var(--border); padding: 10px; text-align: left; vertical-align: top; }
+    th { background: var(--surface); color: #fff; }
+    tr:last-child td { border-bottom: 0; }
+    .muted { color: var(--text-muted); }
+    .warning { color: var(--orange); }
+    .compile-output { margin-top: 12px; display: none; }
+    @media (max-width: 860px) {
+      main { width: min(100% - 24px, 1080px); padding-top: 24px; }
+    }
+    @media (max-width: 560px) {
+      section, .toc, .status, .question, .compile { padding: 16px; }
+      .feedback button, .question label, .compile button, .copy-btn, .local-compile { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>ORD Align Scope Review: Reverse Script Studio</h1>
+    <p class="summary">Stage 1 review page for approving the validation scope before namespace checks, existing-solution comparison, feasibility synthesis, verdict updates, markdown writes, or downstream routing.</p>
+    <div class="meta-row">
+      <span class="pill">alignment_status: review</span>
+      <span class="pill">alignment_date: 2026-06-16</span>
+      <span class="pill">skill: ord-align</span>
+      <span class="pill">stage: scope approval</span>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="Table of Contents">
+    <h2>Table of Contents</h2>
+    <ul>
+      <li><a href="#candidate">Candidate Summary</a></li>
+      <li><a href="#scope">Proposed Scope & Non-Goals</a></li>
+      <li><a href="#namespace">Proposed Package-Name Checks</a></li>
+      <li><a href="#solution-checks">Existing-Solution Check Categories</a></li>
+      <li><a href="#feasibility">Feasibility Dimensions</a></li>
+      <li><a href="#evidence">Stage 1 Evidence & Assumptions</a></li>
+      <li><a href="#stage2-preview">Stage 2 Preview / Expected Review Format</a></li>
+      <li><a href="#paths">Artifact Destination & Proposed File Changes</a></li>
+      <li><a href="#approval">Scope Approval Gate</a></li>
+      <li><a href="#compile">Compile Responses</a></li>
+    </ul>
+  </nav>
+
+  <section id="candidate" data-section="Candidate Summary">
+    <div class="section-head">
+      <h2>Candidate Summary</h2>
+      <div class="feedback" id="fb-candidate" data-section="Candidate Summary">
+        <button type="button" data-value="emphasize">emphasize</button>
+        <button type="button" data-value="down">down</button>
+        <button type="button" data-value="needs-clarification">clarification needed</button>
+      </div>
+    </div>
+    <p>The candidate to validate is <strong>Reverse Script Studio</strong>, an npm-distributed local desktop orchestration layer for screen-recording processing. The available repository artifact describes it as an Electron app that wraps the existing local transcription and OCR pipeline, with a narrow v1 focused on batch ingestion, job execution, progress/log visibility, and output previews.</p>
+    <div class="grid">
+      <div class="card"><strong>Observed source context</strong><br><span class="muted">Existing file: <code>alignment/ord-reverse-script-studio.md</code></span></div>
+      <div class="card"><strong>Likely package candidate</strong><br><span class="muted"><code>reverse-script-studio</code>; fallback candidate <code>recordings-tooling</code></span></div>
+      <div class="card"><strong>Target persona to validate</strong><br><span class="muted">Technical creators and developers with many local screen recordings.</span></div>
+    </div>
+    <div class="feedback-panel" data-for="fb-candidate">
+      <textarea placeholder="Optional section feedback notes"></textarea>
+      <button type="button" class="local-compile">Compile Feedback YAML</button>
+      <button type="button" class="copy-btn">Copy YAML</button>
+      <textarea class="local-yaml" readonly></textarea>
+    </div>
+  </section>
+
+  <section id="scope" data-section="Proposed Scope & Non-Goals">
+    <div class="section-head">
+      <h2>Proposed Scope & Non-Goals</h2>
+      <div class="feedback" id="fb-scope" data-section="Proposed Scope & Non-Goals">
+        <button type="button" data-value="emphasize">emphasize</button>
+        <button type="button" data-value="down">down</button>
+        <button type="button" data-value="needs-clarification">clarification needed</button>
+      </div>
+    </div>
+    <h3>Proposed validation scope</h3>
+    <ul>
+      <li>Validate a local-first Electron developer-preview app that wraps the repository's existing <code>./transcribe</code> workflow.</li>
+      <li>Treat screen-recording batch orchestration, OCR/transcript output preview, and repeatable local jobs as the core wedge.</li>
+      <li>Assess whether a useful v1 can ship in 1-3 days using the current repo pipeline.</li>
+      <li>Check whether npm distribution is viable under the proposed package name or a scoped fallback.</li>
+    </ul>
+    <h3>Proposed non-goals for this validation</h3>
+    <ul>
+      <li>No broad market research into every transcription product category.</li>
+      <li>No implementation, scaffolding, Electron setup, or package publishing.</li>
+      <li>No final GO/NO-GO verdict until Stage 2 review is approved.</li>
+      <li>No social scheduler validation beyond noting it as a deferred or riskier adapter area.</li>
+    </ul>
+    <div class="feedback-panel" data-for="fb-scope">
+      <textarea placeholder="Optional section feedback notes"></textarea>
+      <button type="button" class="local-compile">Compile Feedback YAML</button>
+      <button type="button" class="copy-btn">Copy YAML</button>
+      <textarea class="local-yaml" readonly></textarea>
+    </div>
+  </section>
+
+  <section id="namespace" data-section="Proposed Package-Name Checks">
+    <div class="section-head">
+      <h2>Proposed Package-Name Checks</h2>
+      <div class="feedback" id="fb-namespace" data-section="Proposed Package-Name Checks">
+        <button type="button" data-value="emphasize">emphasize</button>
+        <button type="button" data-value="down">down</button>
+        <button type="button" data-value="needs-clarification">clarification needed</button>
+      </div>
+    </div>
+    <p class="warning">These checks are proposed only. They have not been run in Stage 1.</p>
+    <div class="table-wrap" data-tts-narrative="The package-name plan proposes checking reverse-script-studio first, recordings-tooling as a fallback, and a scoped package only if the public names are unavailable.">
+      <table>
+        <thead><tr><th>Candidate name</th><th>Planned check</th><th>Decision use</th></tr></thead>
+        <tbody>
+          <tr><td><code>reverse-script-studio</code></td><td>Run <code>npm view reverse-script-studio</code> in Stage 2.</td><td>Primary package name if unavailable status is confirmed.</td></tr>
+          <tr><td><code>recordings-tooling</code></td><td>Run <code>npm view recordings-tooling</code> in Stage 2.</td><td>Fallback only if the primary name is taken or unsuitable.</td></tr>
+          <tr><td><code>@georgeqle/reverse-script-studio</code> or another user-approved scope</td><td>Check scoped viability only if needed.</td><td>Fallback path if unscoped namespace is unavailable.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="feedback-panel" data-for="fb-namespace">
+      <textarea placeholder="Optional section feedback notes"></textarea>
+      <button type="button" class="local-compile">Compile Feedback YAML</button>
+      <button type="button" class="copy-btn">Copy YAML</button>
+      <textarea class="local-yaml" readonly></textarea>
+    </div>
+  </section>
+
+  <section id="solution-checks" data-section="Existing-Solution Check Categories">
+    <div class="section-head">
+      <h2>Existing-Solution Check Categories</h2>
+      <div class="feedback" id="fb-solutions" data-section="Existing-Solution Check Categories">
+        <button type="button" data-value="emphasize">emphasize</button>
+        <button type="button" data-value="down">down</button>
+        <button type="button" data-value="needs-clarification">clarification needed</button>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="card"><strong>Local transcription GUIs</strong><br><span class="muted">Check whether they already cover batch screen-recording processing.</span></div>
+      <div class="card"><strong>Whisper web UIs / servers</strong><br><span class="muted">Compare setup, local-first posture, and job operations.</span></div>
+      <div class="card"><strong>Creator metadata tools</strong><br><span class="muted">Check whether outputs solve reverse-script and publication prep needs.</span></div>
+      <div class="card"><strong>Batch OCR / video tools</strong><br><span class="muted">Check whether spoken plus on-screen timeline merging is common.</span></div>
+    </div>
+    <div class="feedback-panel" data-for="fb-solutions">
+      <textarea placeholder="Optional section feedback notes"></textarea>
+      <button type="button" class="local-compile">Compile Feedback YAML</button>
+      <button type="button" class="copy-btn">Copy YAML</button>
+      <textarea class="local-yaml" readonly></textarea>
+    </div>
+  </section>
+
+  <section id="feasibility" data-section="Feasibility Dimensions">
+    <div class="section-head">
+      <h2>Feasibility Dimensions</h2>
+      <div class="feedback" id="fb-feasibility" data-section="Feasibility Dimensions">
+        <button type="button" data-value="emphasize">emphasize</button>
+        <button type="button" data-value="down">down</button>
+        <button type="button" data-value="needs-clarification">clarification needed</button>
+      </div>
+    </div>
+    <div class="table-wrap" data-tts-narrative="The feasibility review will check whether the existing pipeline can be wrapped quickly, whether job state and log parsing are practical, and whether packaging limits should stay outside version one.">
+      <table>
+        <thead><tr><th>Dimension</th><th>Stage 2 question</th><th>Planned evidence</th></tr></thead>
+        <tbody>
+          <tr><td>Core wrapper</td><td>Can the app delegate to existing commands without rewriting transcription logic?</td><td>Repository scripts and command surface.</td></tr>
+          <tr><td>Job management</td><td>Can stdout/log parsing support useful per-file state?</td><td>Existing command behavior and output files.</td></tr>
+          <tr><td>Desktop UI</td><td>Can file selection, operation configuration, logs, and previews ship in 1-3 days?</td><td>V1 surface estimate and dependency assumptions.</td></tr>
+          <tr><td>Distribution risk</td><td>Can npm ship a developer preview without bundling heavy binaries?</td><td>Setup requirements, README expectations, and package boundary.</td></tr>
+          <tr><td>Adoption signal</td><td>Is the need narrower and clearer than generic transcription?</td><td>Prior repo usage evidence plus lightweight external issue/discussion scan.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="feedback-panel" data-for="fb-feasibility">
+      <textarea placeholder="Optional section feedback notes"></textarea>
+      <button type="button" class="local-compile">Compile Feedback YAML</button>
+      <button type="button" class="copy-btn">Copy YAML</button>
+      <textarea class="local-yaml" readonly></textarea>
+    </div>
+  </section>
+
+  <section id="evidence" data-section="Stage 1 Evidence & Assumptions">
+    <div class="section-head">
+      <h2>Stage 1 Evidence & Assumptions</h2>
+      <div class="feedback" id="fb-evidence" data-section="Stage 1 Evidence & Assumptions">
+        <button type="button" data-value="emphasize">emphasize</button>
+        <button type="button" data-value="down">down</button>
+        <button type="button" data-value="needs-clarification">clarification needed</button>
+      </div>
+    </div>
+    <div class="table-wrap" data-tts-narrative="Stage one evidence is limited to repository context. The current assumptions must be approved before validation starts.">
+      <table>
+        <thead><tr><th>Item</th><th>Status</th><th>Decision impact</th></tr></thead>
+        <tbody>
+          <tr><td>Existing alignment markdown exists for Reverse Script Studio.</td><td>Observed at <code>alignment/ord-reverse-script-studio.md</code>.</td><td>Used only to identify the candidate and proposed scope for this review.</td></tr>
+          <tr><td>Primary persona appears to be technical creators with local screen recordings.</td><td>Inferred from existing artifact; not revalidated yet.</td><td>Approve, correct, or narrow this persona before Stage 2.</td></tr>
+          <tr><td>Primary package name appears to be <code>reverse-script-studio</code>.</td><td>Proposed from existing artifact; npm has not been checked in this run.</td><td>Approve package-name checks before Stage 2 namespace validation.</td></tr>
+          <tr><td>Licensing and dependency risk boundary.</td><td>Assumption: keep v1 as a local developer preview using existing setup instead of bundling heavyweight dependencies.</td><td>Correct if installer-grade packaging should be part of validation.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="feedback-panel" data-for="fb-evidence">
+      <textarea placeholder="Optional section feedback notes"></textarea>
+      <button type="button" class="local-compile">Compile Feedback YAML</button>
+      <button type="button" class="copy-btn">Copy YAML</button>
+      <textarea class="local-yaml" readonly></textarea>
+    </div>
+  </section>
+
+  <section id="stage2-preview" data-section="Stage 2 Preview / Expected Review Format">
+    <div class="section-head">
+      <h2>Stage 2 Preview / Expected Review Format</h2>
+      <div class="feedback" id="fb-stage2" data-section="Stage 2 Preview / Expected Review Format">
+        <button type="button" data-value="emphasize">emphasize</button>
+        <button type="button" data-value="down">down</button>
+        <button type="button" data-value="needs-clarification">clarification needed</button>
+      </div>
+    </div>
+    <p>If the scope is approved, Stage 2 will update this same review page with:</p>
+    <ol>
+      <li>A validation-scope-approved status block showing approved checks, output paths, and caveats.</li>
+      <li>Namespace results for each approved npm package name, including command results.</li>
+      <li>An existing-solution comparison table by category, with source notes and fit/gap assessment.</li>
+      <li>A feasibility matrix for core logic, CLI/API surface, tests, docs, publish pipeline, and package boundary.</li>
+      <li>Effort estimate and adoption-signal review.</li>
+      <li>Evidence matrix separating claims, evidence, inference, assumptions, confidence, and decision impact.</li>
+      <li>Verdict review with proposed GO or NO-GO rationale, without writing the final markdown until approved.</li>
+      <li>User format preferences and final artifact approval gates.</li>
+    </ol>
+    <div class="feedback-panel" data-for="fb-stage2">
+      <textarea placeholder="Optional section feedback notes"></textarea>
+      <button type="button" class="local-compile">Compile Feedback YAML</button>
+      <button type="button" class="copy-btn">Copy YAML</button>
+      <textarea class="local-yaml" readonly></textarea>
+    </div>
+  </section>
+
+  <section id="paths" data-section="Artifact Destination & Proposed File Changes">
+    <div class="section-head">
+      <h2>Artifact Destination & Proposed File Changes</h2>
+      <div class="feedback" id="fb-paths" data-section="Artifact Destination & Proposed File Changes">
+        <button type="button" data-value="emphasize">emphasize</button>
+        <button type="button" data-value="down">down</button>
+        <button type="button" data-value="needs-clarification">clarification needed</button>
+      </div>
+    </div>
+    <ul>
+      <li>Stage 1 review page: <code>alignment/ord-align-reverse-script-studio.html</code>.</li>
+      <li>Central alignment index: <code>alignment/index.html</code>.</li>
+      <li>Proposed final GO markdown path, only after Stage 3 approval: <code>alignment/ord-reverse-script-studio.md</code>.</li>
+      <li>No implementation, package scaffolding, or npm publishing files are proposed in this stage.</li>
+    </ul>
+    <div class="question" data-gate="artifact destination" data-section="Artifact Destination & Proposed File Changes">
+      <h3>Required Gate: Artifact Destination & Proposed File Changes</h3>
+      <p>Approve the review and proposed final artifact paths for this validation cycle?</p>
+      <label><input type="radio" name="q-paths" value="approve-paths" data-answer="Approve the Stage 1 HTML page, index update, and proposed Stage 3 markdown path." data-target-path="alignment/ord-align-reverse-script-studio.html; alignment/index.html; alignment/ord-reverse-script-studio.md">Approve listed paths</label>
+      <label><input type="radio" name="q-paths" value="other" data-answer="Other / None of the above">Other / None of the above</label>
+      <textarea class="other-note" placeholder="Describe the path or file-change adjustment"></textarea>
+      <label><input type="radio" name="q-paths" value="needs-clarification" data-answer="Need clarification">Need clarification</label>
+      <textarea class="clarify-note" placeholder="What is unclear?"></textarea>
+      <textarea class="answer-note" placeholder="Optional additional notes"></textarea>
+    </div>
+    <div class="feedback-panel" data-for="fb-paths">
+      <textarea placeholder="Optional section feedback notes"></textarea>
+      <button type="button" class="local-compile">Compile Feedback YAML</button>
+      <button type="button" class="copy-btn">Copy YAML</button>
+      <textarea class="local-yaml" readonly></textarea>
+    </div>
+  </section>
+
+  <section id="approval" data-section="Scope Approval Gate">
+    <div class="section-head">
+      <h2>Scope Approval Gate</h2>
+      <div class="feedback" id="fb-approval" data-section="Scope Approval Gate">
+        <button type="button" data-value="emphasize">emphasize</button>
+        <button type="button" data-value="down">down</button>
+        <button type="button" data-value="needs-clarification">clarification needed</button>
+      </div>
+    </div>
+    <div class="question" data-gate="scope/non-goals" data-section="Scope Approval Gate">
+      <h3>Required Gate: Validation Scope</h3>
+      <p>Should Stage 2 validate Reverse Script Studio using the proposed local-first desktop job-manager scope?</p>
+      <label><input type="radio" name="q-scope" value="approve-scope" data-answer="Approve the proposed local-first desktop job-manager validation scope.">Approve proposed scope</label>
+      <label><input type="radio" name="q-scope" value="approve-with-edits" data-answer="Approve the scope with edits in notes.">Approve with edits in notes</label>
+      <label><input type="radio" name="q-scope" value="other" data-answer="Other / None of the above">Other / None of the above</label>
+      <textarea class="other-note" placeholder="Describe the desired scope decision"></textarea>
+      <label><input type="radio" name="q-scope" value="needs-clarification" data-answer="Need clarification">Need clarification</label>
+      <textarea class="clarify-note" placeholder="What is unclear?"></textarea>
+      <textarea class="answer-note" placeholder="Optional additional notes, such as persona, v1 boundary, or dependency concerns"></textarea>
+    </div>
+    <div class="question" data-gate="evidence coverage" data-section="Scope Approval Gate">
+      <h3>Required Gate: Check Coverage</h3>
+      <p>Are the proposed namespace, existing-solution, feasibility, effort, and adoption-signal checks sufficient for lightweight validation?</p>
+      <label><input type="radio" name="q-coverage" value="approve-coverage" data-answer="Approve the proposed lightweight validation check coverage.">Approve proposed checks</label>
+      <label><input type="radio" name="q-coverage" value="approve-add-sources" data-answer="Approve with additional source categories in notes.">Approve with added sources in notes</label>
+      <label><input type="radio" name="q-coverage" value="other" data-answer="Other / None of the above">Other / None of the above</label>
+      <textarea class="other-note" placeholder="Describe required check coverage changes"></textarea>
+      <label><input type="radio" name="q-coverage" value="needs-clarification" data-answer="Need clarification">Need clarification</label>
+      <textarea class="clarify-note" placeholder="What is unclear?"></textarea>
+      <textarea class="answer-note" placeholder="Optional additional notes"></textarea>
+    </div>
+    <div class="feedback-panel" data-for="fb-approval">
+      <textarea placeholder="Optional section feedback notes"></textarea>
+      <button type="button" class="local-compile">Compile Feedback YAML</button>
+      <button type="button" class="copy-btn">Copy YAML</button>
+      <textarea class="local-yaml" readonly></textarea>
+    </div>
+  </section>
+
+  <section id="compile" class="compile">
+    <h2>Compile Responses</h2>
+    <p class="muted">Answer required gates for final scope approval, or select section feedback for a revision request. Stage 2 starts only after complete compiled YAML has <code>approval_status: ready-for-agent-review</code>.</p>
+    <button type="button" id="compileBtn">Compile Responses</button>
+    <p id="compileStatus" class="muted"></p>
+    <textarea id="compiledYaml" class="compile-output" readonly></textarea>
+    <button type="button" id="copyCompiled" class="copy-btn compile-output">Copy YAML</button>
+  </section>
+</main>
+<script>
+  const pagePath = "alignment/ord-align-reverse-script-studio.html";
+  const requiredQuestions = ["q-paths", "q-scope", "q-coverage"];
+
+  function yamlEscape(value) {
+    return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  }
+
+  function textareaFor(input, cls) {
+    const question = input.closest(".question");
+    return question ? question.querySelector("." + cls) : null;
+  }
+
+  document.querySelectorAll(".question input[type=radio]").forEach(input => {
+    input.addEventListener("change", () => {
+      const question = input.closest(".question");
+      question.querySelectorAll(".other-note,.clarify-note,.answer-note").forEach(el => el.style.display = "none");
+      if (input.value === "other") textareaFor(input, "other-note").style.display = "block";
+      if (input.value === "needs-clarification") textareaFor(input, "clarify-note").style.display = "block";
+      if (input.value !== "other" && input.value !== "needs-clarification") textareaFor(input, "answer-note").style.display = "block";
+    });
+  });
+
+  document.querySelectorAll(".feedback").forEach(group => {
+    group.querySelectorAll("button").forEach(button => {
+      button.addEventListener("click", () => {
+        const already = button.classList.contains("active");
+        group.querySelectorAll("button").forEach(b => b.classList.remove("active"));
+        group.dataset.feedback = "";
+        const panel = document.querySelector(`.feedback-panel[data-for="${group.id}"]`);
+        if (already) {
+          if (panel) panel.style.display = "none";
+          return;
+        }
+        button.classList.add("active");
+        group.dataset.feedback = button.dataset.value;
+        if (panel) panel.style.display = "block";
+      });
+    });
+  });
+
+  function collectFeedback(singleId) {
+    const groups = singleId ? [document.getElementById(singleId)] : Array.from(document.querySelectorAll(".feedback"));
+    return groups.filter(Boolean).filter(group => group.dataset.feedback).map(group => {
+      const panel = document.querySelector(`.feedback-panel[data-for="${group.id}"]`);
+      const notes = panel ? panel.querySelector("textarea").value.trim() : "";
+      const requested = group.dataset.feedback === "emphasize" ? "add-weight-to-section" : group.dataset.feedback === "down" ? "investigate-and-revise" : "clarify-before-approval";
+      return { section: group.dataset.section, feedback: group.dataset.feedback, notes, requested };
+    });
+  }
+
+  function collectAnswers() {
+    return requiredQuestions.map(name => {
+      const input = document.querySelector(`input[name="${name}"]:checked`);
+      if (!input) return null;
+      const question = input.closest(".question");
+      const status = input.value === "other" ? "other" : input.value === "needs-clarification" ? "needs-clarification" : "answered";
+      const noteEl = input.value === "other" ? question.querySelector(".other-note") : input.value === "needs-clarification" ? question.querySelector(".clarify-note") : question.querySelector(".answer-note");
+      return {
+        section: question.dataset.section,
+        gate: question.dataset.gate,
+        status,
+        answer: input.dataset.answer,
+        notes: noteEl ? noteEl.value.trim() : "",
+        targetPath: input.dataset.targetPath || ""
+      };
+    }).filter(Boolean);
+  }
+
+  function renderYaml(answers, feedback) {
+    const unanswered = requiredQuestions.filter(name => !document.querySelector(`input[name="${name}"]:checked`));
+    const hasNegative = answers.some(a => a.status === "needs-clarification" || a.status === "other") || feedback.some(f => f.feedback === "down" || f.feedback === "needs-clarification");
+    const complete = unanswered.length === 0;
+    const ready = complete && !hasNegative;
+    const lines = [
+      `alignment_page: ${pagePath}`,
+      `response_status: ${complete ? "complete" : "partial"}`,
+      `approval_status: ${ready ? "ready-for-agent-review" : "not-approved"}`,
+      `required_gate_status: ${complete ? "complete" : "incomplete"}`,
+      "unanswered_required_questions:"
+    ];
+    if (unanswered.length) unanswered.forEach(q => lines.push(`  - ${q}`)); else lines.push("  []");
+    if (answers.length) {
+      lines.push("gate_answers:");
+      answers.forEach(a => {
+        lines.push(`  - section: "${yamlEscape(a.section)}"`);
+        lines.push(`    gate_type: "${yamlEscape(a.gate)}"`);
+        lines.push(`    status: ${a.status}`);
+        lines.push(`    answer: "${yamlEscape(a.answer)}"`);
+        if (a.targetPath) lines.push(`    target_path: "${yamlEscape(a.targetPath)}"`);
+        if (a.notes) lines.push(`    notes: "${yamlEscape(a.notes)}"`);
+      });
+    }
+    if (feedback.length) {
+      lines.push("section_feedback:");
+      feedback.forEach(f => {
+        lines.push(`  - section: "${yamlEscape(f.section)}"`);
+        lines.push(`    feedback: ${f.feedback}`);
+        lines.push(`    requested_agent_action: ${f.requested}`);
+        if (f.notes) lines.push(`    notes: "${yamlEscape(f.notes)}"`);
+      });
+    }
+    return lines.join("\n");
+  }
+
+  function copyText(text, statusEl) {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => statusEl.textContent = "YAML copied.").catch(() => statusEl.textContent = "YAML compiled. Clipboard copy was blocked.");
+    } else {
+      statusEl.textContent = "YAML compiled. Clipboard API unavailable.";
+    }
+  }
+
+  document.querySelectorAll(".local-compile").forEach(button => {
+    button.addEventListener("click", () => {
+      const panel = button.closest(".feedback-panel");
+      const id = panel.dataset.for;
+      const feedback = collectFeedback(id);
+      const yaml = renderYaml([], feedback);
+      const output = panel.querySelector(".local-yaml");
+      output.value = yaml;
+      output.style.display = "block";
+      copyText(yaml, button);
+    });
+  });
+
+  document.querySelectorAll(".feedback-panel .copy-btn").forEach(button => {
+    button.addEventListener("click", () => {
+      const output = button.closest(".feedback-panel").querySelector(".local-yaml");
+      output.select();
+      copyText(output.value, button);
+    });
+  });
+
+  document.getElementById("compileBtn").addEventListener("click", () => {
+    const answers = collectAnswers();
+    const feedback = collectFeedback();
+    const status = document.getElementById("compileStatus");
+    if (!answers.length && !feedback.length) {
+      status.textContent = "Answer a gate question or select section feedback before compiling.";
+      return;
+    }
+    const yaml = renderYaml(answers, feedback);
+    const output = document.getElementById("compiledYaml");
+    output.value = yaml;
+    output.style.display = "block";
+    document.getElementById("copyCompiled").style.display = "inline-block";
+    copyText(yaml, status);
+  });
+
+  document.getElementById("copyCompiled").addEventListener("click", () => {
+    const output = document.getElementById("compiledYaml");
+    output.select();
+    copyText(output.value, document.getElementById("compileStatus"));
+  });
+</script>
+<script src="../scripts/alignment-tts-kokoro.js"></script>
+</body>
+</html>
